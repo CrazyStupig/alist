@@ -80,6 +80,13 @@ type Put interface {
 	Put(ctx context.Context, dstDir model.Obj, stream model.FileStreamer, up UpdateProgress) error
 }
 
+type PutURL interface {
+	// PutURL directly put a URL into the storage
+	// Applicable to index-based drivers like URL-Tree or drivers that support uploading files as URLs
+	// Called when using SimpleHttp for offline downloading, skipping creating a download task
+	PutURL(ctx context.Context, dstDir model.Obj, name, url string) error
+}
+
 //type WriteResult interface {
 //	MkdirResult
 //	MoveResult
@@ -109,7 +116,14 @@ type PutResult interface {
 	Put(ctx context.Context, dstDir model.Obj, stream model.FileStreamer, up UpdateProgress) (model.Obj, error)
 }
 
-type UpdateProgress func(percentage int)
+type PutURLResult interface {
+	// PutURL directly put a URL into the storage
+	// Applicable to index-based drivers like URL-Tree or drivers that support uploading files as URLs
+	// Called when using SimpleHttp for offline downloading, skipping creating a download task
+	PutURL(ctx context.Context, dstDir model.Obj, name, url string) (model.Obj, error)
+}
+
+type UpdateProgress func(percentage float64)
 
 type Progress struct {
 	Total int64
@@ -120,7 +134,7 @@ type Progress struct {
 func (p *Progress) Write(b []byte) (n int, err error) {
 	n = len(b)
 	p.Done += int64(n)
-	p.up(int(float64(p.Done) / float64(p.Total) * 100))
+	p.up(float64(p.Done) / float64(p.Total) * 100)
 	return
 }
 
