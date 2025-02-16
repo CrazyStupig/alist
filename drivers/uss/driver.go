@@ -3,6 +3,7 @@ package uss
 import (
 	"context"
 	"fmt"
+	"github.com/alist-org/alist/v3/internal/stream"
 	"net/url"
 	"path"
 	"strings"
@@ -80,8 +81,12 @@ func (d *USS) Link(ctx context.Context, file model.Obj, args model.LinkArgs) (*m
 	downExp := time.Hour * time.Duration(d.SignURLExpire)
 	expireAt := time.Now().Add(downExp).Unix()
 	upd := url.QueryEscape(path.Base(file.GetPath()))
-	signStr := strings.Join([]string{d.OperatorPassword, fmt.Sprint(expireAt), fmt.Sprintf("/%s", key)}, "&")
-	upt := utils.GetMD5Encode(signStr)[12:20] + fmt.Sprint(expireAt)
+	tokenOrPassword := d.AntiTheftChainToken
+	if tokenOrPassword == "" {
+		tokenOrPassword = d.OperatorPassword
+	}
+	signStr := strings.Join([]string{tokenOrPassword, fmt.Sprint(expireAt), fmt.Sprintf("/%s", key)}, "&")
+	upt := utils.GetMD5EncodeStr(signStr)[12:20] + fmt.Sprint(expireAt)
 	link := fmt.Sprintf("%s?_upd=%s&_upt=%s", u, upd, upt)
 	return &model.Link{URL: link}, nil
 }
@@ -118,11 +123,13 @@ func (d *USS) Remove(ctx context.Context, obj model.Obj) error {
 	})
 }
 
-func (d *USS) Put(ctx context.Context, dstDir model.Obj, stream model.FileStreamer, up driver.UpdateProgress) error {
-	// TODO not support cancel??
+func (d *USS) Put(ctx context.Context, dstDir model.Obj, s model.FileStreamer, up driver.UpdateProgress) error {
 	return d.client.Put(&upyun.PutObjectConfig{
-		Path:   getKey(path.Join(dstDir.GetPath(), stream.GetName()), false),
-		Reader: stream,
+		Path: getKey(path.Join(dstDir.GetPath(), s.GetName()), false),
+		Reader: driver.NewLimitedUploadStream(ctx, &stream.ReaderUpdatingProgress{
+			Reader:         s,
+			UpdateProgress: up,
+		}),
 	})
 }
 

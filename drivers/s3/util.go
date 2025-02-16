@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
 	"path"
 	"strings"
 
@@ -21,13 +22,21 @@ import (
 // do others that not defined in Driver interface
 
 func (d *S3) initSession() error {
+	var err error
+	accessKeyID, secretAccessKey, sessionToken := d.AccessKeyID, d.SecretAccessKey, d.SessionToken
+	if d.config.Name == "Doge" {
+		credentialsTmp, err := getCredentials(d.AccessKeyID, d.SecretAccessKey)
+		if err != nil {
+			return err
+		}
+		accessKeyID, secretAccessKey, sessionToken = credentialsTmp.AccessKeyId, credentialsTmp.SecretAccessKey, credentialsTmp.SessionToken
+	}
 	cfg := &aws.Config{
-		Credentials:      credentials.NewStaticCredentials(d.AccessKeyID, d.SecretAccessKey, ""),
+		Credentials:      credentials.NewStaticCredentials(accessKeyID, secretAccessKey, sessionToken),
 		Region:           &d.Region,
 		Endpoint:         &d.Endpoint,
 		S3ForcePathStyle: aws.Bool(d.ForcePathStyle),
 	}
-	var err error
 	d.Session, err = session.NewSession(cfg)
 	return err
 }
@@ -69,7 +78,7 @@ func getPlaceholderName(placeholder string) string {
 	return placeholder
 }
 
-func (d *S3) listV1(prefix string) ([]model.Obj, error) {
+func (d *S3) listV1(prefix string, args model.ListArgs) ([]model.Obj, error) {
 	prefix = getKey(prefix, true)
 	log.Debugf("list: %s", prefix)
 	files := make([]model.Obj, 0)
@@ -97,7 +106,7 @@ func (d *S3) listV1(prefix string) ([]model.Obj, error) {
 		}
 		for _, object := range listObjectsResult.Contents {
 			name := path.Base(*object.Key)
-			if name == getPlaceholderName(d.Placeholder) || name == d.Placeholder {
+			if !args.S3ShowPlaceholder && (name == getPlaceholderName(d.Placeholder) || name == d.Placeholder) {
 				continue
 			}
 			file := model.Object{
@@ -120,7 +129,7 @@ func (d *S3) listV1(prefix string) ([]model.Obj, error) {
 	return files, nil
 }
 
-func (d *S3) listV2(prefix string) ([]model.Obj, error) {
+func (d *S3) listV2(prefix string, args model.ListArgs) ([]model.Obj, error) {
 	prefix = getKey(prefix, true)
 	files := make([]model.Obj, 0)
 	var continuationToken, startAfter *string
@@ -152,7 +161,7 @@ func (d *S3) listV2(prefix string) ([]model.Obj, error) {
 				continue
 			}
 			name := path.Base(*object.Key)
-			if name == getPlaceholderName(d.Placeholder) || name == d.Placeholder {
+			if !args.S3ShowPlaceholder && (name == getPlaceholderName(d.Placeholder) || name == d.Placeholder) {
 				continue
 			}
 			file := model.Object{
@@ -190,7 +199,7 @@ func (d *S3) copyFile(ctx context.Context, src string, dst string) error {
 	dstKey := getKey(dst, false)
 	input := &s3.CopyObjectInput{
 		Bucket:     &d.Bucket,
-		CopySource: aws.String("/" + d.Bucket + "/" + srcKey),
+		CopySource: aws.String(url.PathEscape("/" + d.Bucket + "/" + srcKey)),
 		Key:        &dstKey,
 	}
 	_, err := d.client.CopyObject(input)
@@ -198,7 +207,7 @@ func (d *S3) copyFile(ctx context.Context, src string, dst string) error {
 }
 
 func (d *S3) copyDir(ctx context.Context, src string, dst string) error {
-	objs, err := op.List(ctx, d, src, model.ListArgs{})
+	objs, err := op.List(ctx, d, src, model.ListArgs{S3ShowPlaceholder: true})
 	if err != nil {
 		return err
 	}

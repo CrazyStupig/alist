@@ -1,10 +1,12 @@
 package conf
 
-import "regexp"
+import (
+	"net/url"
+	"regexp"
+)
 
 var (
 	BuiltAt    string
-	GoVersion  string
 	GitAuthor  string
 	GitCommit  string
 	Version    string = "dev"
@@ -13,6 +15,7 @@ var (
 
 var (
 	Conf *Config
+	URL  *url.URL
 )
 
 var SlicesMap = make(map[string][]string)
